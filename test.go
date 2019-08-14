@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/net/html"
 )
 
 func getResponse(url string) (*http.Response, error) {
 	client := &http.Client{}
 
 	req, err := http.NewRequest("GET", url, nil)
+	req.Header.Add("Accept-Encoding", "identity")
 	req.Close = true
 	if err != nil {
 		fmt.Println(err)
@@ -47,16 +49,12 @@ func (p Request) fetch() ([]GatherItem, error) {
 	}
 	defer res.Body.Close()
 
-	// b, err := ioutil.ReadAll(res.Body)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// fmt.Println("is utf:", utf8.Valid(b), len(b))
-
-	doc, err := goquery.NewDocumentFromReader(res.Body)
+	root, err := html.Parse(res.Body)
 	if err != nil {
-		return nil, err
+		fmt.Println("aaaa", err)
 	}
+
+	doc := goquery.NewDocumentFromNode(root)
 
 	result := []GatherItem{}
 	doc.Find(p.selector).Each(func(i int, s *goquery.Selection) {
