@@ -2,15 +2,24 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/PuerkitoBio/goquery"
 )
+
+func getResponse(url string) (*http.Response, error) {
+	client := &http.Client{}
+
+	req, err := http.NewRequest("GET", url, nil)
+	req.Close = true
+	if err != nil {
+		fmt.Println(err)
+	}
+	return client.Do(req)
+}
 
 type Request struct {
 	title    string
@@ -32,19 +41,19 @@ type GatherCache struct {
 }
 
 func (p Request) fetch() ([]GatherItem, error) {
-	res, err := http.Get(p.url)
+	res, err := getResponse(p.url)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
 
-	b, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Println("is utf:", utf8.Valid(b))
+	// b, err := ioutil.ReadAll(res.Body)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// fmt.Println("is utf:", utf8.Valid(b), len(b))
 
-	doc, err := goquery.NewDocument(p.url)
+	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
 		return nil, err
 	}
