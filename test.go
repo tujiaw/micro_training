@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -36,7 +38,13 @@ func (p Request) fetch() ([]GatherItem, error) {
 	}
 	defer res.Body.Close()
 
-	doc, err := goquery.NewDocumentFromReader(res.Body)
+	b, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("is utf:", utf8.Valid(b))
+
+	doc, err := goquery.NewDocument(p.url)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +173,7 @@ func (p *Gather) Init() {
 	p.Add(&Request{
 		title:    "小程序资讯",
 		url:      "https://www.newrank.cn/public/news.html",
-		selector: "#media-know-list a",
+		selector: ".media-main-left-news-list",
 		each: func(i int, s *goquery.Selection) GatherItem {
 			fmt.Println(i)
 			a := s.Find("a")
@@ -215,5 +223,5 @@ func (p *Gather) List() []string {
 func main() {
 	gather := new(Gather)
 	gather.Init()
-	fmt.Println(gather.Get("小程序资讯"))
+	fmt.Println(gather.Get("csdn"))
 }
