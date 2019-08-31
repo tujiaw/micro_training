@@ -7,12 +7,19 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 const maxUploadSize = 10 * 1024 * 1024
 const uploadPath = "./upload"
 
 func main() {
+	if !exists(uploadPath) {
+		if err := os.Mkdir(uploadPath, os.ModePerm); err != nil {
+			panic(err)
+		}
+	}
+
 	http.HandleFunc("/upload", uploadFileHandler())
 
 	fs := http.FileServer(http.Dir(uploadPath))
@@ -35,6 +42,19 @@ func uploadFileHandler() http.HandlerFunc {
 		}
 
 		fileName := r.PostFormValue("filename")
+		dir := r.PostFormValue("dir")
+		dir = filepath.Join(uploadPath, dir)
+		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			renderError(w, "INVALID_DIR", http.StatusBadRequest)
+			return
+		}
+
+		newPath := filepath.Join(dir, fileName)
+		multiindex, err := strconv.Atoi(r.PostFormValue("multiindex"))
+		if err != nil {
+			multiindex = 0
+		}
+
 		file, _, err := r.FormFile("uploadFile")
 		if err != nil {
 			renderError(w, "INVALID_FILE", http.StatusBadRequest)
@@ -48,18 +68,16 @@ func uploadFileHandler() http.HandlerFunc {
 			return
 		}
 
-		if fileName[:5] == "multi" {
-			fileName = getMultiName(fileName)
-			if len(fileName) == 0 {
-				panic("file name error")
+		if multiindex >= 1 {
+			if multiindex == 1 {
+				os.Remove(newPath)
 			}
-			newPath := filepath.Join(uploadPath, fileName)
 			err = writeFileAppend(newPath, fileBytes)
 			if err != nil {
 				fmt.Println(err)
+				renderError(w, "WRITE_FILE_APPEND_ERROR", http.StatusInternalServerError)
 			}
 		} else {
-			newPath := filepath.Join(uploadPath, fileName)
 			err = ioutil.WriteFile(newPath, fileBytes, os.ModePerm)
 			if err != nil {
 				fmt.Println(err)
@@ -90,11 +108,22 @@ func getMultiName(filename string) string {
 }
 
 func writeFileAppend(filename string, fileBytes []byte) error {
-	fi, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE, 0644)
+	fi, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return fmt.Errorf("open file error, %v", err)
 	}
 	defer fi.Close()
 	_, err = fi.Write(fileBytes)
 	return err
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	if err != nil {
+		if os.IsExist(err) {
+			return true
+		}
+		return false
+	}
+	return true
 }

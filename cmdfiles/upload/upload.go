@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/rand"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -11,12 +13,18 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 const maxUploadSize = 5 * 1024 * 1024
 const tmpDir = "./tmp"
 
 func main() {
+	fromPtr := flag.String("f", "./filename", "from address")
+	toPtr := flag.String("t", "localhost:8080/", "to localhost:8080/")
+	flag.Parse()
+
 	os.RemoveAll(tmpDir)
 	if !exists(tmpDir) {
 		if err := os.Mkdir(tmpDir, os.ModePerm); err != nil {
@@ -24,28 +32,54 @@ func main() {
 		}
 	}
 
-	var filename string
-	if len(os.Args) < 2 {
-		filename = "F:/github/micro_training/test.pdf"
-	} else {
-		filename = os.Args[1]
+	from := *fromPtr
+	to := *toPtr
+	f, err := os.Stat(from)
+	if err != nil {
+		panic(err)
+		return
 	}
 
+	if f.IsDir() {
+		panic(fmt.Errorf("%s is not file", from))
+		return
+	}
+
+	pos := strings.Index(to, ":")
+	if pos == -1 {
+		to = "localhost:8080/" + to
+	}
+	pos = strings.Index(to, "/")
+	if pos == -1 {
+		panic(errors.New("to error"))
+		return
+	}
+
+	url := fmt.Sprintf("http://%s/upload", to[:pos])
+	dir := to[pos+1:]
+
+	filename := from
 	fileSize := getFileSize(filename)
 	if fileSize <= 0 {
 		panic("file size error")
 	}
 
+	fields := map[string]string{
+		"filename": filepath.Base(filename),
+		"dir":      dir,
+	}
+
 	if fileSize < maxUploadSize {
-		err := postFile(filename, "http://localhost:8080/upload")
+		err := postFile(filename, url, fields)
 		panicIfErr(err)
 	} else {
 		pathChan := make(chan string, 5)
 		go splitFile(filename, pathChan)
-		removeFileList := []string{}
+		index := 0
 		for path := range pathChan {
-			removeFileList = append(removeFileList, path)
-			err := postFile(path, "http://localhost:8080/upload")
+			index += 1
+			fields["multiindex"] = strconv.Itoa(index)
+			err := postFile(path, url, fields)
 			panicIfErr(err)
 		}
 	}
@@ -91,7 +125,8 @@ func splitFile(filename string, pathChan chan string) {
 	close(pathChan)
 }
 
-func postFile(filename string, targetUrl string) error {
+func postFile(filename string, targetUrl string, fileds map[string]string) error {
+	fmt.Println("post", targetUrl, filename)
 	bodyBuf := &bytes.Buffer{}
 	bodyWriter := multipart.NewWriter(bodyBuf)
 	fileWriter, err := bodyWriter.CreateFormFile("uploadFile", filename)
@@ -109,7 +144,9 @@ func postFile(filename string, targetUrl string) error {
 		return err
 	}
 
-	bodyWriter.WriteField("filename", filepath.Base(filename))
+	for k, v := range fileds {
+		bodyWriter.WriteField(k, v)
+	}
 	contentType := bodyWriter.FormDataContentType()
 	bodyWriter.Close()
 	resp, err := http.Post(targetUrl, contentType, bodyBuf)
