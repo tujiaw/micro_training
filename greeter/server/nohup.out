@@ -1,0 +1,24 @@
+2019/08/08 15:48:29 Registering RPC Handler at /rpc
+2019/08/08 15:48:29 Registering API Default Handler at /
+2019/08/08 15:48:29 HTTP API Listening on [::]:3100
+2019/08/08 15:48:29 Transport [http] Listening on [::]:46313
+2019/08/08 15:48:29 Broker [http] Connected to [::]:42594
+2019/08/08 15:48:29 Registry [mdns] Registering node: go.micro.api-411a8ed4-3a09-47d4-922b-f9c95fc937cf
+2019/08/08 15:54:16 Registering RPC Handler at /rpc
+2019/08/08 15:54:16 Registering API Default Handler at /
+2019/08/08 15:54:16 HTTP API Listening on [::]:3100
+2019/08/08 15:54:16 Transport [http] Listening on [::]:32886
+2019/08/08 15:54:16 Broker [http] Connected to [::]:43785
+2019/08/08 15:54:16 Registry [mdns] Registering node: go.micro.api-60caf991-fcd8-48d5-a308-41d21c2ad17b
+2019/08/08 15:54:52 Registering RPC Handler at /rpc
+2019/08/08 15:54:52 Registering API Default Handler at /
+2019/08/08 15:54:52 HTTP API Listening on [::]:3100
+2019/08/08 15:54:52 Transport [http] Listening on [::]:33137
+2019/08/08 15:54:52 Broker [http] Connected to [::]:45248
+2019/08/08 15:54:52 Registry [mdns] Registering node: go.micro.api-3c88dff1-0776-41ac-b985-e8bec3363efb
+2019/08/08 15:56:39 Registering RPC Handler at /rpc
+2019/08/08 15:56:39 Registering API Default Handler at /
+2019/08/08 15:56:39 HTTP API Listening on [::]:3100
+2019/08/08 15:56:39 Transport [http] Listening on [::]:39662
+2019/08/08 15:56:39 Broker [http] Connected to [::]:37900
+2019/08/08 15:56:39 Registry [mdns] Registering node: go.micro.api-ba0ed9ec-4f93-455d-b3a7-4f24f9495199

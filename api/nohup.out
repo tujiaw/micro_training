@@ -1,0 +1,6 @@
+2019/08/08 16:00:36 Registering RPC Handler at /rpc
+2019/08/08 16:00:36 Registering API Default Handler at /
+2019/08/08 16:00:36 HTTP API Listening on [::]:3100
+2019/08/08 16:00:36 Transport [http] Listening on [::]:36524
+2019/08/08 16:00:36 Broker [http] Connected to [::]:39075
+2019/08/08 16:00:36 Registry [mdns] Registering node: go.micro.api-0ada86a8-259b-4759-967e-f3d7df49a372
