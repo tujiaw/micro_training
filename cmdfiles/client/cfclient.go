@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tujiaw/goutil"
 )
@@ -21,46 +23,141 @@ import (
 const maxUploadSize = 5 * 1024 * 1024
 
 var tmpDir = filepath.Join(os.TempDir(), "cmdfiles")
+var configPath = filepath.Join(tmpDir, "config.json")
+var config = NewConfig()
+
+type Config struct {
+	Host string `json:"host"`
+	Port string `json:"port"`
+}
+
+func NewConfig() Config {
+	result := new(Config)
+	b, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return *result
+	}
+	json.Unmarshal(b, result)
+	return *result
+}
+
+func (c Config) save(host string, port string) error {
+	c.Host = host
+	c.Port = port
+	b, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(configPath, b, os.ModePerm)
+}
+
+func (c Config) address() string {
+	return fmt.Sprintf("http://%s:%s", c.Host, c.Port)
+}
+
+func (c Config) uploadUrl(path string) string {
+	tmp := c.append(c.address(), "upload")
+	return c.append(tmp, path)
+}
+
+func (c Config) deleteUrl(path string) string {
+	tmp := c.append(c.address(), "delete")
+	return c.append(tmp, path)
+}
+
+func (c Config) downloadUrl(path string) string {
+	tmp := c.append(c.address(), "files")
+	return c.append(tmp, path)
+}
+
+func (c Config) append(first string, second string) string {
+	if len(second) > 0 {
+		if second[0] != '/' {
+			return first + "/" + second
+		}
+	}
+	return first + second
+}
+
+func init() {
+	if !goutil.Exists(tmpDir) {
+		if err := os.Mkdir(tmpDir, os.ModePerm); err != nil {
+			panic(err)
+		}
+	}
+
+	tmp, _ := os.Open(tmpDir)
+	names, _ := tmp.Readdirnames(-1)
+	for _, name := range names {
+		tmpPath := filepath.Join(tmpDir, name)
+		if tmpPath != configPath {
+			os.RemoveAll(tmpPath)
+		}
+	}
+}
 
 func main() {
+	start := time.Now()
 	fmt.Println(os.TempDir())
-	if len(os.Args) == 1 {
-		fmt.Println("usage: upload <command> [<args>]")
+	if len(os.Args) == 1 || os.Args[1] == "help" {
+		fmt.Println("command error")
+		fmt.Println("usage: app config [<args>]")
+		fmt.Println("usage: app upload [<args>]")
+		fmt.Println("usage: app down [<args>]")
+		fmt.Println("usage: app delete [<args>]")
 		return
 	}
 
+	configCommand := flag.NewFlagSet("config", flag.ExitOnError)
+	hostPtr := configCommand.String("host", "localhost", "remote host")
+	portPtr := configCommand.String("port", "8081", "remote port")
+
 	uploadCommand := flag.NewFlagSet("upload", flag.ExitOnError)
 	uploadFromPtr := uploadCommand.String("from", "", "local file path")
-	uploadToPtr := uploadCommand.String("to", "localhost:8080/", "to localhost:8080/")
+	uploadToPtr := uploadCommand.String("to", "", "remote host path")
 
-	downloadCommand := flag.NewFlagSet("download", flag.ExitOnError)
+	downloadCommand := flag.NewFlagSet("down", flag.ExitOnError)
 	downloadFromPtr := downloadCommand.String("from", "", "remote file path")
 	downloadToPtr := downloadCommand.String("to", "", "local file dir")
 
 	deleteCommand := flag.NewFlagSet("delete", flag.ExitOnError)
 	deleteFromPtr := deleteCommand.String("from", "", "remote file path")
 
-	switch os.Args[1] {
-	case "upload":
-		uploadCommand.Parse(os.Args[2:])
-	case "download":
-		downloadCommand.Parse(os.Args[2:])
-	case "delete":
-		deleteCommand.Parse(os.Args[2:])
-	default:
+	cmds := map[string]*flag.FlagSet{}
+	cmds["config"] = configCommand
+	cmds["upload"] = uploadCommand
+	cmds["down"] = downloadCommand
+	cmds["delete"] = deleteCommand
+
+	cmd, exist := cmds[os.Args[1]]
+	if exist {
+		if len(os.Args) > 2 && os.Args[2] == "help" {
+			cmd.PrintDefaults()
+			return
+		}
+		cmd.Parse(os.Args[2:])
+	} else {
 		fmt.Printf("%q is not valid command.\n", os.Args[1])
 		os.Exit(2)
 	}
 
-	if uploadCommand.Parsed() {
+	if !configCommand.Parsed() {
+		if config.Host == "" || config.Port == "" {
+			panic("please set config: app config help")
+		}
+	}
+
+	if configCommand.Parsed() {
+		config.save(*hostPtr, *portPtr)
+	} else if uploadCommand.Parsed() {
 		uploadFile(*uploadFromPtr, *uploadToPtr)
 	} else if downloadCommand.Parsed() {
 		downloadFile(*downloadFromPtr, *downloadToPtr)
 	} else if deleteCommand.Parsed() {
-		deleteFile(*deleteFromPtr)
-	} else {
-		panic("command error")
+		remoteDeleteFile(*deleteFromPtr)
 	}
+
+	fmt.Println("------", time.Since(start), "------")
 }
 
 func uploadFile(from string, to string) {
@@ -77,30 +174,6 @@ func uploadFile(from string, to string) {
 		panic(fmt.Errorf("%s is not file", from))
 	}
 
-	if !goutil.Exists(tmpDir) {
-		if err := os.Mkdir(tmpDir, os.ModePerm); err != nil {
-			panic(err)
-		}
-	}
-
-	tmp, err := os.Open(tmpDir)
-	names, _ := tmp.Readdirnames(-1)
-	for _, name := range names {
-		os.RemoveAll(filepath.Join(tmpDir, name))
-	}
-
-	pos := strings.Index(to, ":")
-	if pos == -1 {
-		to = "localhost:8080/" + to
-	}
-	pos = strings.Index(to, "/")
-	if pos == -1 {
-		panic(errors.New("to error"))
-	}
-
-	url := fmt.Sprintf("http://%s/upload", to[:pos])
-	dir := to[pos+1:]
-
 	filename := from
 	fileSize := goutil.GetFileSize(filename)
 	if fileSize <= 0 {
@@ -109,11 +182,11 @@ func uploadFile(from string, to string) {
 
 	fields := map[string]string{
 		"filename": filepath.Base(filename),
-		"dir":      dir,
+		"dir":      to,
 	}
 
 	if fileSize < maxUploadSize {
-		err := postFile(filename, url, fields)
+		err := postFile(filename, config.uploadUrl(to), fields)
 		panicIfErr(err)
 	} else {
 		pathChan := make(chan string, 5)
@@ -122,7 +195,7 @@ func uploadFile(from string, to string) {
 		for path := range pathChan {
 			index += 1
 			fields["multiindex"] = strconv.Itoa(index)
-			err := postFile(path, url, fields)
+			err := postFile(path, config.uploadUrl(to), fields)
 			panicIfErr(err)
 		}
 	}
@@ -133,64 +206,47 @@ func downloadFile(from string, to string) {
 		panic(errors.New("remote file path is empty!"))
 	}
 
-	from = fmt.Sprintf("http://localhost:8080/files/%s", from)
-	pos := strings.LastIndex(from, "/")
-	if pos == len(from)-1 {
-		pos = strings.LastIndex(from[:len(from)-1], "/")
-	}
-
-	if len(to) == 0 {
-		to = "./"
-	}
-	to = to + from[pos+1:]
-
-	fmt.Printf("download from:%s, to:%s\n", from, to)
-	resp, err := http.Get(from)
+	url := config.downloadUrl(from)
+	resp, err := http.Get(url)
 	if err != nil {
 		panic(err)
 	}
+	defer resp.Body.Close()
 
-	os.Remove(to)
-	buf := make([]byte, maxUploadSize/2)
-	total := 0
-	for {
-		n, err := resp.Body.Read(buf)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			panic(err)
-		}
-		if n == 0 {
-			break
-		}
-		if err = goutil.WriteFileAppend(to, buf[:n]); err != nil {
-			panic(err)
-		}
-		total += n
-		fmt.Printf("\r%s\t", FormatBytes(float64(total)))
+	filename := from
+	pos := strings.LastIndex(from, "/")
+	if pos > 0 {
+		filename = from[pos+1:]
 	}
+
+	to = filepath.Join(".", to, filename)
+	DeleteFile(to)
+	if err := os.MkdirAll(filepath.Dir(to), os.ModePerm); err != nil {
+		panic("create dir error")
+	}
+
+	fmt.Println("download from", url, "to", to)
+	chanChunk := make(chan []byte, 5)
+	go ReadChunk(resp.Body, maxUploadSize/2, chanChunk)
+	total := 0
+	for chunk := range chanChunk {
+		total += len(chunk)
+		if err = goutil.WriteFileAppend(to, chunk); err != nil {
+			panic(err)
+		}
+		fmt.Printf("\r%d %s\t", total, FormatBytes(float64(total)))
+	}
+
 	fmt.Println()
 	fmt.Println("SUCCESS")
 }
 
-func deleteFile(from string) {
+func remoteDeleteFile(from string) {
 	if len(from) == 0 {
 		panic("from is empty")
 	}
-	url := ""
-	pos := strings.Index(from, ":")
-	if pos == -1 {
-		url = fmt.Sprintf("http://localhost:8080/delete/%s", from)
-	} else {
-		pos2 := strings.Index(from[pos:], "/")
-		if pos2 == -1 {
-			panic("from path error")
-		}
-		url = fmt.Sprintf("%s:%s/delete/%s", from[:pos], from[pos+1:pos2], from[pos2+1:])
-	}
-	fmt.Println("delete url:", url)
-	resp, err := http.Get(url)
+
+	resp, err := http.Get(config.deleteUrl(from))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -304,4 +360,34 @@ func FormatBytes(size float64) string {
 	default:
 		return trimZero(fmt.Sprintf("%.2f", size/GB)) + " GB"
 	}
+}
+
+func DeleteFile(path string) error {
+	f, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+
+	if !f.IsDir() {
+		return os.Remove(path)
+	}
+	return nil
+}
+
+func ReadChunk(r io.Reader, maxChunkSize int, chanChunk chan<- []byte) {
+	for {
+		buf := make([]byte, maxChunkSize)
+		n, err := r.Read(buf)
+		if n < 0 {
+			break
+		}
+		if err != nil && err != io.EOF {
+			break
+		}
+		chanChunk <- buf[:n]
+		if err == io.EOF {
+			break
+		}
+	}
+	close(chanChunk)
 }

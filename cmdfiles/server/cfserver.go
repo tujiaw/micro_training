@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -13,9 +14,13 @@ import (
 )
 
 const maxUploadSize = 10 * 1024 * 1024
-const uploadPath = "./upload"
+const uploadPath = "./public"
 
 func main() {
+	portPtr := flag.String("p", "8081", "port")
+	flag.Parse()
+
+	port := *portPtr
 	if !goutil.Exists(uploadPath) {
 		if err := os.Mkdir(uploadPath, os.ModePerm); err != nil {
 			panic(err)
@@ -28,8 +33,8 @@ func main() {
 	fs := http.FileServer(http.Dir(uploadPath))
 	http.Handle("/files/", http.StripPrefix("/files", fs))
 
-	log.Println("listen on 8080")
-	err := http.ListenAndServe(":8080", nil)
+	log.Println("listen on", port)
+	err := http.ListenAndServe(":"+port, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
